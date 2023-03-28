@@ -14,11 +14,21 @@ import type { EmbedProps } from "@lib/withEmbedSsr";
 
 import AvailabilityPage from "@components/booking/pages/AvailabilityPage";
 
+console.log("test");
+
+console.log("test1");
+
+console.log("test2");
+
+console.log("test3");
+
 export type AvailabilityPageProps = inferSSRProps<typeof getStaticProps> & EmbedProps;
+
+console.log("test4");
 
 export default function Type(props: AvailabilityPageProps) {
   const { t } = useLocale();
-
+  console.log("testbowo", props);
   return props.away ? (
     <div className="h-screen dark:bg-gray-900">
       <main className="mx-auto max-w-3xl px-4 py-24">
@@ -59,6 +69,7 @@ Type.isThemeSupported = true;
 const paramsSchema = z.object({ type: z.string(), user: z.string() });
 async function getUserPageProps(context: GetStaticPropsContext) {
   // load server side dependencies
+  console.log(6);
   const MarkdownIt = await import("markdown-it").then((mod) => mod.default);
   const prisma = await import("@calcom/prisma").then((mod) => mod.default);
   const { privacyFilteredLocations } = await import("@calcom/app-store/locations");
@@ -87,11 +98,11 @@ async function getUserPageProps(context: GetStaticPropsContext) {
       darkBrandColor: true,
       metadata: true,
       eventTypes: {
-        where: {
-          // Many-to-many relationship causes inclusion of the team events - cool -
-          // but to prevent these from being selected, make sure the teamId is NULL.
-          AND: [{ slug }, { teamId: null }],
-        },
+        // where: {
+        // Many-to-many relationship causes inclusion of the team events - cool -
+        // but to prevent these from being selected, make sure the teamId is NULL.
+        // AND: [{ slug: slug.trim() }, { teamId: null }],
+        // },
         select: {
           title: true,
           slug: true,
@@ -125,9 +136,25 @@ async function getUserPageProps(context: GetStaticPropsContext) {
     },
   });
 
+  console.log(11, user);
   const md = new MarkdownIt("default", { html: true, breaks: true, linkify: true });
 
-  if (!user || !user.eventTypes.length) return { notFound: true };
+  if (!user) return { notFound: true };
+
+  if (user.eventTypes.length == 0) {
+    const eventTypeTest = await prisma.eventType.findFirst({
+      select: {
+        id: true,
+        slug: true,
+        title: true,
+      },
+      where: {
+        slug,
+      },
+    });
+
+    user.eventTypes.push(eventTypeTest);
+  }
 
   const [eventType]: ((typeof user.eventTypes)[number] & {
     users: Pick<User, "name" | "username" | "hideBranding" | "timeZone">[];
@@ -144,6 +171,8 @@ async function getUserPageProps(context: GetStaticPropsContext) {
       ],
     },
   ];
+
+  console.log(eventType);
 
   if (!eventType) return { notFound: true };
 
@@ -190,6 +219,7 @@ async function getUserPageProps(context: GetStaticPropsContext) {
 
 async function getDynamicGroupPageProps(context: GetStaticPropsContext) {
   // load server side dependencies
+  console.log(7);
   const { getDefaultEvent, getGroupName, getUsernameList } = await import("@calcom/lib/defaultEvents");
   const { privacyFilteredLocations } = await import("@calcom/app-store/locations");
   const { parseRecurringEvent } = await import("@calcom/lib/isRecurringEvent");
@@ -243,6 +273,7 @@ async function getDynamicGroupPageProps(context: GetStaticPropsContext) {
   });
 
   if (!users.length) {
+    console.log("no users");
     return {
       notFound: true,
     };
@@ -319,6 +350,7 @@ async function getDynamicGroupPageProps(context: GetStaticPropsContext) {
 }
 
 export const getStaticProps = async (context: GetStaticPropsContext) => {
+  console.log(8);
   const { user: userParam } = paramsSchema.parse(context.params);
   // dynamic groups are not generated at build time, but otherwise are probably cached until infinity.
   const isDynamicGroup = userParam.includes("+");
@@ -330,5 +362,6 @@ export const getStaticProps = async (context: GetStaticPropsContext) => {
 };
 
 export const getStaticPaths: GetStaticPaths = async () => {
+  console.log(9);
   return { paths: [], fallback: "blocking" };
 };
