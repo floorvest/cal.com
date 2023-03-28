@@ -12,7 +12,7 @@
     "test-codegen": "yarn playwright codegen http://localhost:3000",
     "type-check": "tsc --pretty --noEmit",
     "build": "next build",
-    "start": "next start",
+    "start": "next start -p 7652",
     "lint": "eslint . --ignore-path .gitignore",
     "lint:fix": "eslint . --ext .ts,.js,.tsx,.jsx --fix",
     "lint:report": "eslint . --format json --output-file ../../lint-results/web.json",
