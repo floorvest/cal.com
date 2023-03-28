@@ -1,4 +1,4 @@
-import type { UserPermissionRole } from "@prisma/client";
+import type { UserPermissionRole, Membership, Team } from "@prisma/client";
 import { IdentityProvider } from "@prisma/client";
 import { readFileSync } from "fs";
 import Handlebars from "handlebars";
@@ -21,6 +21,7 @@ import { clientSecretVerifier, hostedCal, isSAMLLoginEnabled } from "@calcom/fea
 import { APP_NAME, IS_TEAM_BILLING_ENABLED, WEBAPP_URL, WEBSITE_URL } from "@calcom/lib/constants";
 import { symmetricDecrypt } from "@calcom/lib/crypto";
 import { defaultCookies } from "@calcom/lib/default-cookies";
+import { isENVDev } from "@calcom/lib/env";
 import { randomString } from "@calcom/lib/random";
 import rateLimit from "@calcom/lib/rateLimit";
 import { serverConfig } from "@calcom/lib/serverConfig";
@@ -59,6 +60,20 @@ const signJwt = async (payload: { email: string }) => {
 
 const loginWithTotp = async (user: { email: string }) =>
   `/auth/login?totp=${await signJwt({ email: user.email })}`;
+
+type UserTeams = {
+  teams: (Membership & {
+    team: Team;
+  })[];
+};
+
+const checkIfUserBelongsToActiveTeam = <T extends UserTeams>(user: T): boolean =>
+  user.teams.filter((m: { team: { metadata: unknown } }) => {
+    if (!IS_TEAM_BILLING_ENABLED) return true;
+    const metadata = teamMetadataSchema.safeParse(m.team.metadata);
+    if (metadata.success && metadata.data?.subscriptionId) return true;
+    return false;
+  }).length > 0;
 
 const providers: Provider[] = [
   CredentialsProvider({
@@ -156,32 +171,28 @@ const providers: Provider[] = [
         }
       }
       // Check if the user you are logging into has any active teams
-      const hasActiveTeams =
-        user.teams.filter((m: { team: { metadata: unknown } }) => {
-          if (!IS_TEAM_BILLING_ENABLED) return true;
-          const metadata = teamMetadataSchema.safeParse(m.team.metadata);
-          if (metadata.success && metadata.data?.subscriptionId) return true;
-          return false;
-        }).length > 0;
+      const hasActiveTeams = checkIfUserBelongsToActiveTeam(user);
 
       // authentication success- but does it meet the minimum password requirements?
-      if (user.role === "ADMIN" && !isPasswordValid(credentials.password, false, true)) {
-        return {
-          id: user.id,
-          username: user.username,
-          email: user.email,
-          name: user.name,
-          role: "INACTIVE_ADMIN",
-          belongsToActiveTeam: hasActiveTeams,
-        };
-      }
+      const validateRole = (role: UserPermissionRole) => {
+        // User's role is not "ADMIN"
+        if (role !== "ADMIN") return role;
+        // User's identity provider is not "CAL"
+        if (user.identityProvider !== IdentityProvider.CAL) return role;
+        // User's password is valid and two-factor authentication is enabled
+        if (isPasswordValid(credentials.password, false, true) && user.twoFactorEnabled) return role;
+        // Code is running in a development environment
+        if (isENVDev) return role;
+        // By this point it is an ADMIN without valid security conditions
+        return "INACTIVE_ADMIN";
+      };
 
       return {
         id: user.id,
         username: user.username,
         email: user.email,
         name: user.name,
-        role: user.role,
+        role: validateRole(user.role),
         belongsToActiveTeam: hasActiveTeams,
       };
     },
@@ -330,6 +341,16 @@ function isNumber(n: string) {
 
 const calcomAdapter = CalComAdapter(prisma);
 
+const mapIdentityProvider = (providerName: string) => {
+  switch (providerName) {
+    case "saml-idp":
+    case "saml":
+      return IdentityProvider.SAML;
+    default:
+      return IdentityProvider.GOOGLE;
+  }
+};
+
 export const AUTH_OPTIONS: AuthOptions = {
   // eslint-disable-next-line @typescript-eslint/ban-ts-comment
   // @ts-ignore
@@ -378,6 +399,11 @@ export const AUTH_OPTIONS: AuthOptions = {
             name: true,
             email: true,
             role: true,
+            teams: {
+              include: {
+                team: true,
+              },
+            },
           },
         });
 
@@ -385,9 +411,14 @@ export const AUTH_OPTIONS: AuthOptions = {
           return token;
         }
 
+        // Check if the existingUser has any active teams
+        const belongsToActiveTeam = checkIfUserBelongsToActiveTeam(existingUser);
+        const { teams, ...existingUserWithoutTeamsField } = existingUser;
+
         return {
-          ...existingUser,
+          ...existingUserWithoutTeamsField,
           ...token,
+          belongsToActiveTeam,
         };
       };
       if (!user) {
@@ -429,7 +460,7 @@ export const AUTH_OPTIONS: AuthOptions = {
                 identityProvider: idP,
               },
               {
-                identityProviderId: account.providerAccountId as string,
+                identityProviderId: account.providerAccountId,
               },
             ],
           },
@@ -499,10 +530,7 @@ export const AUTH_OPTIONS: AuthOptions = {
       }
 
       if (account?.provider) {
-        let idP: IdentityProvider = IdentityProvider.GOOGLE;
-        if (account.provider === "saml" || account.provider === "saml-idp") {
-          idP = IdentityProvider.SAML;
-        }
+        const idP: IdentityProvider = mapIdentityProvider(account.provider);
         // eslint-disable-next-line @typescript-eslint/ban-ts-comment
         // @ts-ignore-error TODO validate email_verified key on profile
         user.email_verified = user.email_verified || !!user.emailVerified || profile.email_verified;
@@ -511,21 +539,47 @@ export const AUTH_OPTIONS: AuthOptions = {
           return "/auth/error?error=unverified-email";
         }
 
-        // Only google oauth on this path
-        const existingUser = await prisma.user.findFirst({
+        let existingUser = await prisma.user.findFirst({
           include: {
             accounts: {
               where: {
-                provider: idP,
+                provider: account.provider,
               },
             },
           },
           where: {
-            identityProvider: idP as IdentityProvider,
+            identityProvider: idP,
             identityProviderId: account.providerAccountId,
           },
         });
 
+        /* --- START FIX LEGACY ISSUE WHERE 'identityProviderId' was accidentally set to userId --- */
+        if (!existingUser) {
+          existingUser = await prisma.user.findFirst({
+            include: {
+              accounts: {
+                where: {
+                  provider: account.provider,
+                },
+              },
+            },
+            where: {
+              identityProvider: idP,
+              identityProviderId: String(user.id),
+            },
+          });
+          if (existingUser) {
+            await prisma.user.update({
+              where: {
+                id: existingUser?.id,
+              },
+              data: {
+                identityProviderId: account.providerAccountId,
+              },
+            });
+          }
+        }
+        /* --- END FIXES LEGACY ISSUE WHERE 'identityProviderId' was accidentally set to userId --- */
         if (existingUser) {
           // In this case there's an existing user and their email address
           // hasn't changed since they last logged in.
@@ -571,7 +625,12 @@ export const AUTH_OPTIONS: AuthOptions = {
         // a new account. If an account already exists with the incoming email
         // address return an error for now.
         const existingUserWithEmail = await prisma.user.findFirst({
-          where: { email: user.email },
+          where: {
+            email: {
+              equals: user.email,
+              mode: "insensitive",
+            },
+          },
         });
 
         if (existingUserWithEmail) {
@@ -591,15 +650,17 @@ export const AUTH_OPTIONS: AuthOptions = {
             !existingUserWithEmail.username
           ) {
             await prisma.user.update({
-              where: { email: user.email },
+              where: { email: existingUserWithEmail.email },
               data: {
+                // update the email to the IdP email
+                email: user.email,
                 // Slugify the incoming name and append a few random characters to
                 // prevent conflicts for users with the same name.
                 username: usernameSlug(user.name),
                 emailVerified: new Date(Date.now()),
                 name: user.name,
                 identityProvider: idP,
-                identityProviderId: String(user.id),
+                identityProviderId: account.providerAccountId,
               },
             });
 
@@ -620,8 +681,9 @@ export const AUTH_OPTIONS: AuthOptions = {
               // also update email to the IdP email
               data: {
                 password: null,
+                email: user.email,
                 identityProvider: idP,
-                identityProviderId: String(user.id),
+                identityProviderId: account.providerAccountId,
               },
             });
             if (existingUserWithEmail.twoFactorEnabled) {
@@ -645,7 +707,7 @@ export const AUTH_OPTIONS: AuthOptions = {
             name: user.name,
             email: user.email,
             identityProvider: idP,
-            identityProviderId: String(user.id),
+            identityProviderId: account.providerAccountId,
           },
         });
 

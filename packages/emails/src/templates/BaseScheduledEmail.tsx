@@ -58,19 +58,25 @@ export const BaseScheduledEmail = (
           : props.callToAction || <ManageLink attendee={props.attendee} calEvent={props.calEvent} />
       }
       subtitle={props.subtitle || <>{t("emailed_you_and_any_other_attendees")}</>}>
-      <Info
-        label={t("cancellation_reason")}
-        description={
-          props.calEvent.cancellationReason && props.calEvent.cancellationReason.replace("$RCH$", "")
-        } // Removing flag to distinguish reschedule from cancellation
-        withSpacer
-      />
+      {props.calEvent.cancellationReason && (
+        <Info
+          label={t(
+            props.calEvent.cancellationReason.startsWith("$RCH$")
+              ? "reschedule_reason"
+              : "cancellation_reason"
+          )}
+          description={
+            !!props.calEvent.cancellationReason && props.calEvent.cancellationReason.replace("$RCH$", "")
+          } // Removing flag to distinguish reschedule from cancellation
+          withSpacer
+        />
+      )}
       <Info label={t("rejection_reason")} description={props.calEvent.rejectionReason} withSpacer />
       <Info label={t("what")} description={props.calEvent.title} withSpacer />
       <WhenInfo calEvent={props.calEvent} t={t} timeZone={timeZone} />
       <WhoInfo calEvent={props.calEvent} t={t} />
       <LocationInfo calEvent={props.calEvent} t={t} />
-      <Info label={t("description")} description={props.calEvent.description} withSpacer />
+      <Info label={t("description")} description={props.calEvent.description} withSpacer formatted />
       <Info label={t("additional_notes")} description={props.calEvent.additionalNotes} withSpacer />
       {props.includeAppsStatus && <AppsStatus calEvent={props.calEvent} t={t} />}
       <UserFieldsResponses calEvent={props.calEvent} />
