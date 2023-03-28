@@ -1,12 +1,12 @@
 import { trpc } from "@calcom/trpc/react";
 import type { RouterOutputs } from "@calcom/trpc/react";
-import { Badge, List, ListItem, ListItemText, ListItemTitle, Switch } from "@calcom/ui";
+import { List, Switch } from "@calcom/ui";
 
 export const FlagAdminList = () => {
-  const [data] = trpc.viewer.features.list.useSuspenseQuery();
+  // const [data] = trpc.viewer.features.list.useSuspenseQuery();
   return (
     <List roundContainer noBorderTreatment>
-      {data.map((flag) => (
+      {/* {data.map((flag) => (
         <ListItem key={flag.slug} rounded={false}>
           <div className="flex flex-1 flex-col">
             <ListItemTitle component="h3">
@@ -20,7 +20,7 @@ export const FlagAdminList = () => {
             <FlagToggle flag={flag} />
           </div>
         </ListItem>
-      ))}
+      ))} */}
     </List>
   );
 };
