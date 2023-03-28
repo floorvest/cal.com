@@ -123,8 +123,6 @@ async function getUserPageProps(context: GetStaticPropsContext) {
     },
   });
 
-  const md = new MarkdownIt("default", { html: true, breaks: true, linkify: true });
-
   if (!user) return { notFound: true };
 
   if (user.eventTypes.length == 0) {
