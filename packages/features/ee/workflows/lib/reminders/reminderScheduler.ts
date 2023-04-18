@@ -54,6 +54,7 @@ export const scheduleWorkflowReminders = async (
             );
           } else if (
             step.action === WorkflowActions.EMAIL_ATTENDEE ||
+            step.action === WorkflowActions.EMAIL_ADDRESS ||
             step.action === WorkflowActions.EMAIL_HOST
           ) {
             let sendTo = "";
@@ -64,6 +65,9 @@ export const scheduleWorkflowReminders = async (
                 break;
               case WorkflowActions.EMAIL_ATTENDEE:
                 sendTo = evt.attendees[0].email;
+                break;
+              case WorkflowActions.EMAIL_ADDRESS:
+                sendTo = step.sendTo || evt.organizer.email;
                 break;
             }
 

@@ -63,6 +63,8 @@ export const scheduleEmailReminder = async (
   let attendeeName = "";
   let timeZone = "";
 
+  console.log("bowo", sendTo);
+
   switch (action) {
     case WorkflowActions.EMAIL_HOST:
       name = evt.organizer.name;
@@ -73,6 +75,11 @@ export const scheduleEmailReminder = async (
       name = evt.attendees[0].name;
       attendeeName = evt.organizer.name;
       timeZone = evt.attendees[0].timeZone;
+      break;
+    case WorkflowActions.EMAIL_ADDRESS:
+      name = evt.organizer.name;
+      attendeeName = evt.attendees[0].name;
+      timeZone = evt.organizer.timeZone;
       break;
   }
 
