@@ -68,8 +68,24 @@ export const createContext = async (
   // for API-response caching see https://trpc.io/docs/caching
   const session = await sessionGetter({ req, res });
 
-  const locale = getLocaleFromHeaders(req);
-  const i18n = await serverSideTranslations(getLocaleFromHeaders(req), ["common", "vital"]);
+  let locale = getLocaleFromHeaders(req);
+
+  if (session?.user?.id) {
+    const user = await prisma.user.findUnique({
+      where: {
+        id: session.user.id,
+      },
+      select: {
+        locale: true,
+      },
+    });
+
+    if (user?.locale) {
+      locale = user.locale;
+    }
+  }
+
+  const i18n = await serverSideTranslations(locale, ["common", "vital"]);
   const contextInner = await createContextInner({ session, i18n, locale });
   return {
     ...contextInner,
