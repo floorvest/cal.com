@@ -108,6 +108,7 @@ const TeamsVideoApiAdapter = (credential: CredentialPayload): VideoApiAdapter =>
       startDateTime: event.startTime,
       endDateTime: event.endTime,
       subject: event.title,
+      recordAutomatically: true,
     };
   };
 
