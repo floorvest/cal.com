@@ -125,6 +125,8 @@ async function getUserPageProps(context: GetStaticPropsContext) {
 
   if (!user) return { notFound: true };
 
+  let selectedEvent = null
+
   if (user.eventTypes.length == 0) {
     const eventTypeTest = await prisma.eventType.findFirst({
       select: {
@@ -144,7 +146,9 @@ async function getUserPageProps(context: GetStaticPropsContext) {
     users: Pick<User, "name" | "username" | "hideBranding" | "timeZone">[];
   })[] = [
     {
-      ...user.eventTypes[0],
+      ...user.eventTypes.find((v) => {
+        return v.slug == slug
+      }),
       users: [
         {
           name: user.name,
@@ -183,7 +187,7 @@ async function getUserPageProps(context: GetStaticPropsContext) {
     props: {
       eventType: eventTypeObject,
       profile: {
-        ...eventType.users[0],
+        user,
         theme: user.theme,
         allowDynamicBooking: false,
         weekStart: user.weekStart,
