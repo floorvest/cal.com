@@ -96,11 +96,7 @@ function WorkflowsPage() {
       heading={t("workflows")}
       title={t("workflows")}
       subtitle={t("workflows_to_automate_notifications")}
-      CTA={
-        query.data.profiles.length === 1 &&
-        session.data?.hasValidLicense &&
-        allWorkflowsData?.workflows &&
-        allWorkflowsData?.workflows.length > 0 ? (
+      CTA={(
           <CreateButton
             subtitle={t("new_workflow_subtitle").toUpperCase()}
             options={profileOptions}
@@ -110,8 +106,6 @@ function WorkflowsPage() {
             isLoading={createMutation.isLoading}
             disableMobileButton={true}
           />
-        ) : (
-          <></>
         )
       }>
       <LicenseRequired>
