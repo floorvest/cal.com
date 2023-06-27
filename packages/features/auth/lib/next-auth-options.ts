@@ -93,7 +93,7 @@ const providers: Provider[] = [
 
       const user = await prisma.user.findUnique({
         where: {
-          email: credentials.email.toLowerCase(),
+          email: credentials.email,
         },
         select: {
           role: true,
