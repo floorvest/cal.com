@@ -72,6 +72,7 @@ export default class BaseEmail {
     return {
       transport: serverConfig.transport,
       from: serverConfig.from,
+      name: serverConfig.fromName
     };
   }
 

@@ -36,4 +36,5 @@ function detectTransport(): SendmailTransport.Options | SMTPConnection.Options |
 export const serverConfig = {
   transport: detectTransport(),
   from: process.env.EMAIL_FROM,
+  fromName: process.env.EMAIL_FROM_NAME
 };

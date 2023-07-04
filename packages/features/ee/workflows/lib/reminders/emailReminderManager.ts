@@ -11,8 +11,10 @@ import type { BookingInfo, timeUnitLowerCase } from "./smsReminderManager";
 import type { VariablesType } from "./templates/customTemplate";
 import customTemplate from "./templates/customTemplate";
 import emailReminderTemplate from "./templates/emailReminderTemplate";
+import EmailReminderSender from "./templates/emailReminderSender";
 
 let sendgridAPIKey, senderEmail: string;
+let usingSendgrid: boolean = false;
 
 if (process.env.SENDGRID_API_KEY) {
   sendgridAPIKey = process.env.SENDGRID_API_KEY as string;
@@ -20,6 +22,7 @@ if (process.env.SENDGRID_API_KEY) {
 
   sgMail.setApiKey(sendgridAPIKey);
   client.setApiKey(sendgridAPIKey);
+  usingSendgrid = true;
 }
 
 export const scheduleEmailReminder = async (
@@ -49,21 +52,24 @@ export const scheduleEmailReminder = async (
   } else if (triggerEvent === WorkflowTriggerEvents.AFTER_EVENT) {
     scheduledDate = timeSpan.time && timeUnit ? dayjs(endTime).add(timeSpan.time, timeUnit) : null;
   }
-  if (!process.env.SENDGRID_API_KEY || !process.env.SENDGRID_EMAIL) {
-    console.error("Sendgrid credentials are missing from the .env file");
-    return;
-  }
 
-  const batchIdResponse = await client.request({
-    url: "/v3/mail/batch",
-    method: "POST",
-  });
+  // if (!process.env.SENDGRID_API_KEY || !process.env.SENDGRID_EMAIL) {
+  //   console.error("Sendgrid credentials are missing from the .env file");
+  //   return;
+  // }
+
+  let batchIdResponse = null
+  
+  if (usingSendgrid) {
+    batchIdResponse = await client.request({
+      url: "/v3/mail/batch",
+      method: "POST",
+    });
+  }
 
   let name = "";
   let attendeeName = "";
   let timeZone = "";
-
-  console.log("bowo", sendTo);
 
   switch (action) {
     case WorkflowActions.EMAIL_HOST:
@@ -126,22 +132,39 @@ export const scheduleEmailReminder = async (
     triggerEvent === WorkflowTriggerEvents.EVENT_CANCELLED ||
     triggerEvent === WorkflowTriggerEvents.RESCHEDULE_EVENT
   ) {
-    try {
-      await sgMail.send({
-        to: sendTo,
-        from: {
-          email: senderEmail,
-          name: sender,
-        },
-        subject: emailContent.emailSubject,
-        text: emailContent.emailBody.text,
-        html: emailContent.emailBody.html,
-        batchId: batchIdResponse[1].batch_id,
-        replyTo: evt.organizer.email,
-      });
-    } catch (error) {
-      console.log("Error sending Email");
+
+    if (usingSendgrid) {
+      try {
+        await sgMail.send({
+          to: sendTo,
+          from: {
+            email: senderEmail,
+            name: sender,
+          },
+          subject: emailContent.emailSubject,
+          text: emailContent.emailBody.text,
+          html: emailContent.emailBody.html,
+          batchId: batchIdResponse[1].batch_id,
+          replyTo: evt.organizer.email,
+        });
+      } catch (error) {
+        console.log("Error sending Email");
+      }
+    } else {
+      try {
+        const sender = new EmailReminderSender({
+          to: sendTo,
+          subject: emailContent.emailSubject,
+          text: emailContent.emailBody.text,
+          html: emailContent.emailBody.html
+        })
+
+        await sender.sendEmail()
+      } catch (error) {
+        console.log("Erorr sending email using nodemailer", error.message)
+      }
     }
+    
   } else if (
     (triggerEvent === WorkflowTriggerEvents.BEFORE_EVENT ||
       triggerEvent === WorkflowTriggerEvents.AFTER_EVENT) &&
@@ -154,19 +177,34 @@ export const scheduleEmailReminder = async (
       !scheduledDate.isAfter(currentDate.add(72, "hour"))
     ) {
       try {
-        await sgMail.send({
-          to: sendTo,
-          from: {
-            email: senderEmail,
-            name: sender,
-          },
-          subject: emailContent.emailSubject,
-          text: emailContent.emailBody.text,
-          html: emailContent.emailBody.html,
-          batchId: batchIdResponse[1].batch_id,
-          sendAt: scheduledDate.unix(),
-          replyTo: evt.organizer.email,
-        });
+        let batchId = 0;
+
+        if (usingSendgrid) {
+          batchId = batchIdResponse[1].batch_id;
+
+          await sgMail.send({
+            to: sendTo,
+            from: {
+              email: senderEmail,
+              name: sender,
+            },
+            subject: emailContent.emailSubject,
+            text: emailContent.emailBody.text,
+            html: emailContent.emailBody.html,
+            batchId: batchIdResponse[1].batch_id,
+            sendAt: scheduledDate.unix(),
+            replyTo: evt.organizer.email,
+          });
+        } else {
+          const sender = new EmailReminderSender({
+            to: sendTo,
+            subject: emailContent.emailSubject,
+            text: emailContent.emailBody.text,
+            html: emailContent.emailBody.html
+          })
+  
+          await sender.sendEmail()
+        }
 
         await prisma.workflowReminder.create({
           data: {
@@ -175,7 +213,7 @@ export const scheduleEmailReminder = async (
             method: WorkflowMethods.EMAIL,
             scheduledDate: scheduledDate.toDate(),
             scheduled: true,
-            referenceId: batchIdResponse[1].batch_id,
+            referenceId: batchId,
           },
         });
       } catch (error) {
